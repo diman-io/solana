@@ -333,6 +333,8 @@ pub fn archive_snapshot_package(
         file_ext
     ));
 
+    remove_tmp_snapshot_archives(&tar_dir);
+
     {
         let mut archive_file = fs::File::create(&archive_path)?;
 
