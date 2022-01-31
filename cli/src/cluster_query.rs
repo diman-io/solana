@@ -1691,6 +1691,70 @@ pub fn process_show_stakes(
     use crate::stake::build_stake_state;
 
     let progress_bar = new_spinner_progress_bar();
+
+    let vote_account_pubkeys = match vote_account_pubkeys {
+        Some(vote_account_pubkeys) => {
+            progress_bar.set_message("Fetching vote accounts...");
+            let rpc_vote_accounts = rpc_client.get_vote_accounts()?;
+            let vote_account_pubkeys = vote_account_pubkeys
+                .iter()
+                .filter_map(|&pubkey| {
+                    let address = pubkey.to_string();
+                    let vote_address = rpc_vote_accounts
+                        .current
+                        .iter()
+                        .chain(rpc_vote_accounts.delinquent.iter())
+                        .filter_map(|v| {
+                            if address == v.node_pubkey {
+                                Some(Pubkey::from_str(v.vote_pubkey.as_str()).unwrap())
+                            } else if address == v.vote_pubkey {
+                                Some(pubkey)
+                            } else {
+                                None
+                            }
+                        })
+                        .take(1)
+                        .collect::<Vec<Pubkey>>();
+                    match vote_address.len() {
+                        0 => Some((pubkey, None)),
+                        _ => Some((pubkey, Some(vote_address[0]))),
+                    }
+                })
+                .collect::<Vec<(Pubkey, Option<Pubkey>)>>();
+            let bad_pubkeys = vote_account_pubkeys
+                .iter()
+                .filter_map(|&tuple| match tuple.1 {
+                    None => Some(tuple.0.to_string()),
+                    _ => None,
+                })
+                .collect::<Vec<String>>();
+            if bad_pubkeys.len() > 0 {
+                let msg = if bad_pubkeys.len() == 1 {
+                    format!(
+                        "{} isn't vote address or validator identity.",
+                        bad_pubkeys[0]
+                    )
+                } else {
+                    format!(
+                        "{} aren't vote addresses or validator identities.",
+                        bad_pubkeys.join(", ")
+                    )
+                };
+                return Err(msg.into());
+            }
+            let vote_account_pubkeys = vote_account_pubkeys
+                .iter()
+                .filter_map(|&tuple| match tuple.1 {
+                    None => None,
+                    _ => tuple.1,
+                })
+                .collect::<Vec<Pubkey>>();
+            Some(vote_account_pubkeys)
+        }
+        None => None,
+    };
+    let vote_account_pubkeys = vote_account_pubkeys.as_deref();
+
     progress_bar.set_message("Fetching stake accounts...");
 
     let mut program_accounts_config = RpcProgramAccountsConfig {
